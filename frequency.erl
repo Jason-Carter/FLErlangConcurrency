@@ -14,11 +14,11 @@
 
 % TO use/test from the shell:
 %
-%  register(frequencies, spawn(frequency, init, [])). 
+%  register(frequencies, spawn(frequency, init, [])).
 %  frequencies ! {request, self(), allocate}.
 %  receive {reply, Freq} -> Freq end.
 %  frequencies ! {request, self(), {deallocate, Freq}}.
-%  receive {reply, ok} -> worked end.
+%  receive {reply, Msg} -> Msg end.
 %  frequencies ! {request, self(), stop}.
 %  receive {reply, stopped} -> stopped end.
  
@@ -39,8 +39,8 @@ loop(Frequencies) ->
       Pid ! {reply, Reply},
       loop(NewFrequencies);
     {request, Pid , {deallocate, Freq}} ->
-      NewFrequencies = deallocate(Frequencies, Freq),
-      Pid ! {reply, ok},
+      {NewFrequencies, Reply} = deallocate(Frequencies, Pid, Freq),
+      Pid ! {reply, Reply},
       loop(NewFrequencies);
     {request, Pid, stop} ->
       Pid ! {reply, stopped}
@@ -52,11 +52,21 @@ loop(Frequencies) ->
 allocate({[], Allocated}, _Pid) ->
   {{[], Allocated}, {error, no_frequency}};
 allocate({[Freq|Free], Allocated}, Pid) ->
-  case lists:keyfind(Pid, 2, Allocated) of
-    false -> {{[Freq|Free], Allocated}, {error, pid_already_allocated}};
-    _ -> {{Free, [{Freq, Pid}|Allocated]}, {ok, Freq}}
+  case lists:keymember(Pid, 2, Allocated) of
+    true  -> {{[Freq|Free], Allocated}, {error, pid_already_assigned}};
+    false -> {{Free, [{Freq, Pid}|Allocated]}, {ok, Freq}}
   end.
 
-deallocate({Free, Allocated}, Freq) ->
-  NewAllocated=lists:keydelete(Freq, 1, Allocated),
-  {[Freq|Free],  NewAllocated}.
+deallocate({Free, Allocated}, Pid, Freq) ->
+  case pid_assigned_freq({Freq, Pid}, Allocated) of
+    false ->
+      {{Free, Allocated}, {error, pid_not_assigned_freq}};
+    true ->
+      NewAllocated=lists:keydelete(Freq, 1, Allocated),
+      {{[Freq|Free],  NewAllocated}, {ok, Freq}}
+  end.
+
+
+pid_assigned_freq({_Freq, _Pid}, []) -> false;
+pid_assigned_freq({_Freq, _Pid}, [{_Freq, _Pid} | _Allocated]) -> true;
+pid_assigned_freq({Freq, Pid}, [{_, _} | Allocated]) -> pid_assigned_freq({Freq, Pid}, Allocated).
