@@ -9,6 +9,7 @@
 -module(frequency2).
 -export([start/0,allocate/0,deallocate/1,stop/0,clear/0]).
 -export([init/0]).
+-export([test_freq/0]).
 
 %% These are the start functions used to create and
 %% initialize the server.
@@ -22,6 +23,13 @@
 %  frequency2:clear().
 %  frequency2:stop().
 
+test_freq() ->
+  frequency2:start(),
+  frequency2:allocate(),
+  frequency2:allocate(),
+  frequency2:deallocate(11),
+  frequency2:clear(),
+  frequency2:stop().
 
 start() ->
     register(frequency,
@@ -83,7 +91,9 @@ stop() ->
 
 clear() ->
   receive
-      _Msg -> clear()
+      Msg ->
+        io:format("Clearing Msg: ~w~n",[Msg]),
+        clear()
   after 0 ->
       ok
   end.
