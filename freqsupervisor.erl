@@ -8,17 +8,30 @@
 
 -module(freqsupervisor).
 -export([start_simulation/0]).
--export([init_client/1,start_client/2]).
--export([init_server/0,start_server/0]).
+-export([init_supervisor/0,start_supervisor/0]).
+-export([init_client/2,start_client/3]).
+-export([init_server/1]).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% Testing/simulation functions
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% These are the start functions used to create and
 %% initialize the server.
 
 start_simulation() ->
-  start_server(),
-  start_client(client1, [allocate, wait, deallocate,wait]),
-  %start_client(client1, [allocate,allocate,wait,allocate,wait,deallocate,wait,deallocate,wait,deallocate]),
-  start_client(client2, [allocate, wait, deallocate,wait]).
+    start_supervisor(),
+    timer:sleep(2000),
+    start_client(client1, frequency_server1, [allocate, wait, deallocate,wait]),
+    start_client(client2, frequency_server1, [allocate, wait, deallocate,wait]),
+    start_client(client3, frequency_server2, [allocate, wait, deallocate,wait]),
+    start_client(client4, frequency_server2, [allocate, wait, deallocate,wait]).
+%   start_server([10,11,12,13,14,15]),
+%   start_client(client1, [allocate, wait, deallocate,wait]),
+%   %start_client(client1, [allocate,allocate,wait,allocate,wait,deallocate,wait,deallocate,wait,deallocate]),
+%   start_client(client2, [allocate, wait, deallocate,wait]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
@@ -26,7 +39,21 @@ start_simulation() ->
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+start_supervisor() ->
+    register(frequency_supervisor, spawn(freqsupervisor, init_supervisor, [])).
 
+init_supervisor() ->
+    process_flag(trap_exit, true),
+    register(frequency_server1, spawn_link(freqsupervisor, server_init, [[10,11,12,13,14,15]])),
+    register(frequency_server2, spawn_link(freqsupervisor, server_init, [[20,21,22,23,24,25]])),
+    supervisor_loop().
+
+supervisor_loop() ->
+    % To do...
+    receive
+        Msg ->
+            io:format("[~w] Supervisor message: ~w~n", [self(), Msg])
+    end.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -35,27 +62,24 @@ start_simulation() ->
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-start_server() ->
-    register(freqserver,
-	     spawn(freqsupervisor, init_server, [])).
+% start_server(FrequencyList) ->
+%     register(freqserver,
+% 	     spawn(freqsupervisor, init_server, [FrequencyList])).
 
-init_server() ->
+init_server(FrequencyList) ->
   process_flag(trap_exit, true),    %%% ADDED
-  Frequencies = {get_frequencies(), []},
+  Frequencies = {FrequencyList, []},
   server_loop(Frequencies).
-
-% Hard Coded
-get_frequencies() -> [10,11,12,13,14,15].
 
 %% The Main Loop
 server_loop(Frequencies) ->
   receive
     {request, Pid, allocate} ->
-      {NewFrequencies, Reply} = allocate(Frequencies, Pid),
+      {NewFrequencies, Reply} = server_allocate(Frequencies, Pid),
       Pid ! {reply, Reply},
       server_loop(NewFrequencies);
     {request, Pid , {deallocate, Freq}} ->
-      NewFrequencies = deallocate(Frequencies, Freq),
+      NewFrequencies = server_deallocate(Frequencies, Freq),
       Pid ! {reply, ok},
       server_loop(NewFrequencies);
     {request, Pid, stop} ->
@@ -68,13 +92,13 @@ server_loop(Frequencies) ->
 %% The Internal Help Functions used to allocate and
 %% deallocate frequencies.
 
-allocate({[], Allocated}, _Pid) ->
+server_allocate({[], Allocated}, _Pid) ->
   {{[], Allocated}, {error, no_frequency}};
-allocate({[Freq|Free], Allocated}, Pid) ->
+server_allocate({[Freq|Free], Allocated}, Pid) ->
   link(Pid),                                               %%% ADDED
   {{Free, [{Freq, Pid}|Allocated]}, {ok, Freq}}.
 
-deallocate({Free, Allocated}, Freq) ->
+server_deallocate({Free, Allocated}, Freq) ->
   {value,{Freq,Pid}} = lists:keysearch(Freq,1,Allocated),  %%% ADDED
   unlink(Pid),                                             %%% ADDED
   NewAllocated=lists:keydelete(Freq, 1, Allocated),
@@ -95,20 +119,20 @@ exited({Free, Allocated}, Pid) ->                %%% FUNCTION ADDED
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-start_client(ClientName, Commands) ->
-    register(ClientName, spawn(freqsupervisor, init_client, [Commands])).
+start_client(ClientName, ServerName, Commands) ->
+    register(ClientName, spawn(freqsupervisor, init_client, [ServerName, Commands])).
 
-init_client(Commands) ->
+init_client(ServerName, Commands) ->
   process_flag(trap_exit, true),
-  client_loop(Commands).
+  client_loop(ServerName, Commands).
 
-client_loop(Commands) -> client_loop(Commands, [], []).
+client_loop(ServerName, Commands) -> client_loop(ServerName, Commands, [], []).
 
-client_loop([], Commands, Frequencies) ->
+client_loop(ServerName, [], Commands, Frequencies) ->
   % Start the loop agin, and loop forever (until exit signal)
-  client_loop(lists:reverse(Commands), [], Frequencies);
+  client_loop(ServerName, lists:reverse(Commands), [], Frequencies);
 
-client_loop([Command |CommandsRemaining], CommandsProcessed, Frequencies) ->
+client_loop(ServerName, [Command |CommandsRemaining], CommandsProcessed, Frequencies) ->
   receive
     {'EXIT', _Pid, normal} -> io:format("[~w] Exited", [self()]);
     {'EXIT', _Pid, Reason} -> io:format("[~w] Killed: ~w~n",[self(), Reason]);
@@ -117,35 +141,35 @@ client_loop([Command |CommandsRemaining], CommandsProcessed, Frequencies) ->
   after 0 ->
     case Command of
       allocate ->
-        {ok, Freq} = allocate(),
+        {ok, Freq} = client_allocate(ServerName),
         io:format("[~w] Allocated frequency: ~w~n",[self(),Freq]),
-        client_loop(CommandsRemaining, [Command | CommandsProcessed], [Freq | Frequencies]);
+        client_loop(ServerName, CommandsRemaining, [Command | CommandsProcessed], [Freq | Frequencies]);
       deallocate ->
         case Frequencies of
           [] ->
             io:format("[~w] No frequencies to deallocate!~n", [self()]),
-            client_loop(CommandsRemaining, [Command | CommandsProcessed], Frequencies);
+            client_loop(ServerName, CommandsRemaining, [Command | CommandsProcessed], Frequencies);
           [Freq | AllocatedFrequencies] ->
             io:format("[~w] Deallocating frequency: ~w~n",[self(), Freq]),
-            deallocate(Freq),
-            client_loop(CommandsRemaining, [Command | CommandsProcessed], AllocatedFrequencies)
+            client_deallocate(ServerName, Freq),
+            client_loop(ServerName, CommandsRemaining, [Command | CommandsProcessed], AllocatedFrequencies)
         end;
       wait ->
         io:format("[~w] Sleeping~n", [self()]),
         timer:sleep(5000),
-        client_loop(CommandsRemaining, [Command | CommandsProcessed], Frequencies)
+        client_loop(ServerName, CommandsRemaining, [Command | CommandsProcessed], Frequencies)
     end
   end.
 
 %% Functional interfaces
-allocate() -> 
-    freqserver ! {request, self(), allocate},
+client_allocate(ServerName) -> 
+    ServerName ! {request, self(), allocate},
     receive 
 	    {reply, Reply} -> Reply
     end.
 
-deallocate(Freq) -> 
-    freqserver ! {request, self(), {deallocate, Freq}},
+client_deallocate(ServerName, Freq) -> 
+    ServerName ! {request, self(), {deallocate, Freq}},
     receive 
 	    {reply, Reply} -> Reply
     end.
