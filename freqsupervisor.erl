@@ -44,8 +44,8 @@ start_supervisor() ->
 
 init_supervisor() ->
     process_flag(trap_exit, true),
-    register(frequency_server1, spawn_link(freqsupervisor, server_init, [[10,11,12,13,14,15]])),
-    register(frequency_server2, spawn_link(freqsupervisor, server_init, [[20,21,22,23,24,25]])),
+    register(frequency_server1, spawn_link(freqsupervisor, init_server, [[10,11,12,13,14,15]])),
+    register(frequency_server2, spawn_link(freqsupervisor, init_server, [[20,21,22,23,24,25]])),
     supervisor_loop().
 
 supervisor_loop() ->
@@ -84,9 +84,10 @@ server_loop(Frequencies) ->
       server_loop(NewFrequencies);
     {request, Pid, stop} ->
       Pid ! {reply, stopped};
-    {'EXIT', Pid, _Reason} ->                   %%% CLAUSE ADDED
-      NewFrequencies = exited(Frequencies, Pid), 
-      server_loop(NewFrequencies)
+    {'EXIT', Pid, Reason} ->                   %%% CLAUSE ADDED
+      _NewFrequencies = exited(Frequencies, Pid),
+      io:format("[~w] Killed: ~w~n",[self(), Reason])
+      %server_loop(NewFrequencies)
   end.
 
 %% The Internal Help Functions used to allocate and
