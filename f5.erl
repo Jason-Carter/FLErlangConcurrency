@@ -74,15 +74,25 @@ server_loop(Frequencies) ->
             Pid ! {reply, Reply},
             server_loop(NewFrequencies);
         {request, Pid , {deallocate, Freq}} ->
-            NewFrequencies = server_deallocate(Frequencies, Freq),
-            Pid ! {reply, ok},
-            server_loop(NewFrequencies);
+            try server_deallocate(Frequencies, Freq) of
+                {FreeFrequencies, AllocatedFrequencies} ->
+                    Pid ! {reply, ok},
+                    server_loop({FreeFrequencies, AllocatedFrequencies})
+            catch
+            % Not sure what to do, so log and carry on...
+                throw:frequency_not_allocated -> 
+                    io:format("[~w] Server caught error attempting to deallocate frequency ~w ~n",[self(), Freq]),
+                    server_loop(Frequencies)
+            end;
         {request, Pid, stop} ->
             Pid ! {reply, stopped};
         {'EXIT', Pid, Reason} ->
             io:format("[~w] Server detected client ~w died (reason: ~w), deallocating frequencies~n",[self(), Pid, Reason]),
             NewFrequencies = exited(Frequencies, Pid),
-            server_loop(NewFrequencies)
+            server_loop(NewFrequencies);
+        UnknownMsg ->
+            io:format("[~w] Server encountered unknown message: ~w~n",[self(), UnknownMsg]),
+            throw(unknown_message)
     end.
 
 %% The Internal Help Functions used to allocate and deallocate frequencies.
@@ -94,10 +104,14 @@ server_allocate({[Freq|Free], Allocated}, Pid) ->
     {{Free, [{Freq, Pid}|Allocated]}, {ok, Freq}}.
 
 server_deallocate({Free, Allocated}, Freq) ->
-    {value,{Freq,Pid}} = lists:keysearch(Freq,1,Allocated),
-    unlink(Pid),
-    NewAllocated=lists:keydelete(Freq, 1, Allocated),
-    {[Freq|Free], NewAllocated}.
+    case lists:keysearch(Freq,1,Allocated) of
+       {value,{Freq,Pid}} ->
+            unlink(Pid),
+            NewAllocated=lists:keydelete(Freq, 1, Allocated),
+            {[Freq|Free], NewAllocated};
+        false ->
+            throw(frequency_not_allocated)
+    end.
 
 exited({Free, Allocated}, Pid) ->
     case lists:keysearch(Pid,2,Allocated) of
@@ -105,7 +119,7 @@ exited({Free, Allocated}, Pid) ->
             NewAllocated = lists:keydelete(Freq,1,Allocated),
             {[Freq|Free],NewAllocated}; 
         false ->
-            {Free,Allocated} 
+            {Free,Allocated}
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
