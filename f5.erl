@@ -24,7 +24,7 @@ start_sim() ->
     start_supervisor(),
     timer:sleep(2000),
     start_client(client1, server1, [allocate, wait, deallocate, wait]),
-    start_client(client2, server1, [allocate, wait, deallocate, wait]).
+    start_client(client2, server1, [allocate, wait, deallocate, deallocate, wait]).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -82,6 +82,7 @@ server_loop(Frequencies) ->
             % Not sure what to do, so log and carry on...
                 throw:frequency_not_allocated -> 
                     io:format("[~w] Server caught error attempting to deallocate frequency ~w ~n",[self(), Freq]),
+                    Pid ! stop, % Naughty client, stop it...
                     server_loop(Frequencies)
             end;
         {request, Pid, stop} ->
@@ -156,7 +157,9 @@ client_loop(ServerName, [Command |CommandsRemaining], CommandsProcessed, Frequen
             deallocate ->
                 case Frequencies of
                     [] ->
-                        io:format("[~w] No frequencies to deallocate!~n", [self()]),
+                        %io:format("[~w] No frequencies to deallocate!~n", [self()]),
+                        io:format("[~w] Testing frequency deallocation when nothing allocated!~n", [self()]),
+                        client_deallocate(ServerName, 21),
                         client_loop(ServerName, CommandsRemaining, [Command | CommandsProcessed], Frequencies);
                     [Freq | AllocatedFrequencies] ->
                         io:format("[~w] Deallocating frequency: ~w~n",[self(), Freq]),
@@ -180,5 +183,6 @@ client_allocate(ServerName) ->
 client_deallocate(ServerName, Freq) -> 
     ServerName ! {request, self(), {deallocate, Freq}},
     receive 
-	      {reply, Reply} -> Reply
+	      {reply, Reply} -> Reply;
+          stop -> io:format("[~w] Wasn't me, I didn't do it!~n", [self()])
     end.
