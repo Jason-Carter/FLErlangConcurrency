@@ -7,8 +7,8 @@
 %%   (c) Francesco Cesarini and Simon Thompson
 
 -module(f6).
--export([start/0,allocate/0,deallocate/1,stop/0,inject/1]).
--export([init/0]).
+-export([start/0,allocate/0,deallocate/1,stop/0]).
+-export([init/0,loop/1]).
 
 %% These are the start functions used to create and
 %% initialize the server.
@@ -31,15 +31,11 @@ loop(Frequencies) ->
         {request, Pid, allocate} ->
             {NewFrequencies, Reply} = allocate(Frequencies, Pid),
             Pid ! {reply, Reply},
-            loop(NewFrequencies);
+            f6:loop(NewFrequencies);
         {request, Pid , {deallocate, Freq}} ->
             NewFrequencies = deallocate(Frequencies, Freq),
             Pid ! {reply, ok},
-            loop(NewFrequencies);
-        {request, Pid, {inject, Freqs}} ->
-            NewFrequencies = inject(Frequencies, Freqs),
-            Pid ! {reply, injected},
-            loop(NewFrequencies);
+            f6:loop(NewFrequencies);
         {request, Pid, stop} ->
             Pid ! {reply, stopped}
     end.
@@ -57,12 +53,6 @@ deallocate(Freq) ->
     receive 
 	    {reply, Reply} -> Reply
     end.
-
-inject(Freqs) ->
-	frequency ! {request, self(), {inject, Freqs}},
-	receive
-		{reply, Reply} -> Reply
-	end.
 
 stop() -> 
     frequency ! {request, self(), stop},
@@ -83,5 +73,3 @@ deallocate({Free, Allocated}, Freq) ->
 	NewAllocated=lists:keydelete(Freq, 1, Allocated),
 	{[Freq|Free],  NewAllocated}.
 
-inject({Free, Allocated}, Freqs) ->
-	{Free ++ Freqs, Allocated}.

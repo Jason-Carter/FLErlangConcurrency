@@ -8,7 +8,7 @@
 
 -module(f6).
 -export([start/0,allocate/0,deallocate/1,stop/0,inject/1]).
--export([init/0]).
+-export([init/0,loop/1]).
 
 %% These are the start functions used to create and
 %% initialize the server.
@@ -31,15 +31,15 @@ loop(Frequencies) ->
         {request, Pid, allocate} ->
             {NewFrequencies, Reply} = allocate(Frequencies, Pid),
             Pid ! {reply, Reply},
-            loop(NewFrequencies);
+            f6:loop(NewFrequencies);
         {request, Pid , {deallocate, Freq}} ->
             NewFrequencies = deallocate(Frequencies, Freq),
             Pid ! {reply, ok},
-            loop(NewFrequencies);
+            f6:loop(NewFrequencies);
         {request, Pid, {inject, Freqs}} ->
             NewFrequencies = inject(Frequencies, Freqs),
             Pid ! {reply, injected},
-            loop(NewFrequencies);
+            f6:loop(NewFrequencies);
         {request, Pid, stop} ->
             Pid ! {reply, stopped}
     end.
