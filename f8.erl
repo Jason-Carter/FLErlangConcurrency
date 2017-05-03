@@ -7,8 +7,7 @@
 %%   (c) Francesco Cesarini and Simon Thompson
 
 -module(f8).
--behaviour(gen_server).
--export([start/0,allocate/0,deallocate/1,stop/0]).
+-export([start/0,allocate/0,deallocate/1,stop/0]). % The interface functions
 -export([init/0]).
 
 %% These are the start functions used to create and
