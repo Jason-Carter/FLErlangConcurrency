@@ -53,10 +53,10 @@ handle_call(allocate, From, Frequencies) ->
 
 handle_cast({deallocate, Freq}, Frequencies) ->
     NewFrequencies = deallocate(Frequencies, Freq),
-    {reply, NewFrequencies};
+    {noreply, NewFrequencies};
   
 handle_cast(stop, State) ->
-    {stopped, State}.    
+    {stop,stop_requested, State}.    
   
 
 %% The Internal Help Functions used to allocate and
